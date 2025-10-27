@@ -14,6 +14,13 @@ export default function Home() {
   const [isInitializing, setIsInitializing] = useState(false);
   const [initError, setInitError] = useState(null);
   const [showStatus, setShowStatus] = useState(false);
+  const [currentRoom, setCurrentRoom] = useState('chaintext-global');
+  const [showRoomInput, setShowRoomInput] = useState(false);
+  const [roomInputValue, setRoomInputValue] = useState('');
+  const [showNodeConnect, setShowNodeConnect] = useState(false);
+  const [nodeIdInput, setNodeIdInput] = useState('');
+  const [myNodeId, setMyNodeId] = useState('');
+  const [connectedPeers, setConnectedPeers] = useState(0);
 
   // Initialize IPFS and OrbitDB when wallet connects
   useEffect(() => {
@@ -22,7 +29,7 @@ export default function Home() {
     }
   }, [walletAddress]);
 
-  const initializeOrbitDB = async () => {
+  const initializeOrbitDB = async (room = currentRoom) => {
     setIsInitializing(true);
     setInitError(null);
 
@@ -31,10 +38,24 @@ export default function Home() {
       const system = await setup((newMessages) => {
         console.log('Messages updated:', newMessages.length);
         setMessages(newMessages);
-      });
+      }, room);
 
       setOrbitSystem(system);
+      setCurrentRoom(room);
+      setMyNodeId(system.getNodeId());
       console.log('OrbitDB initialized successfully');
+      
+      // Update peer count periodically
+      const updatePeers = async () => {
+        const count = await system.getPeerCount();
+        setConnectedPeers(count);
+      };
+      updatePeers();
+      const peerInterval = setInterval(updatePeers, 3000);
+      
+      // Store interval for cleanup
+      system._peerInterval = peerInterval;
+      
     } catch (error) {
       console.error('Failed to initialize OrbitDB:', error);
       setInitError(error.message);
@@ -46,6 +67,48 @@ export default function Home() {
   const handleWalletConnect = (address, walletSigner) => {
     setWalletAddress(address);
     setSigner(walletSigner);
+  };
+
+  const handleSwitchRoom = async () => {
+    if (!roomInputValue.trim() || !orbitSystem) return;
+    
+    try {
+      setIsInitializing(true);
+      if (orbitSystem._peerInterval) {
+        clearInterval(orbitSystem._peerInterval);
+      }
+      const newSystem = await orbitSystem.switchRoom(roomInputValue.trim());
+      setOrbitSystem(newSystem);
+      setCurrentRoom(roomInputValue.trim());
+      setMyNodeId(newSystem.getNodeId());
+      setShowRoomInput(false);
+      setRoomInputValue('');
+      setMessages([]);
+    } catch (error) {
+      console.error('Failed to switch room:', error);
+      alert('Failed to switch room: ' + error.message);
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const handleConnectToNode = async () => {
+    if (!nodeIdInput.trim() || !orbitSystem) return;
+    
+    try {
+      await orbitSystem.connectToNode(nodeIdInput.trim());
+      setShowNodeConnect(false);
+      setNodeIdInput('');
+      alert(`✅ Connected to node! Syncing messages...`);
+    } catch (error) {
+      console.error('Failed to connect to node:', error);
+      alert('Failed to connect: ' + error.message);
+    }
+  };
+
+  const copyNodeId = () => {
+    navigator.clipboard.writeText(myNodeId);
+    alert('📋 Node ID copied to clipboard!');
   };
 
   const handleSendMessage = async (messageText) => {
@@ -97,6 +160,33 @@ export default function Home() {
         </div>
 
         <div style={styles.headerActions}>
+          {orbitSystem && (
+            <>
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowNodeConnect(!showNodeConnect)}
+                style={styles.nodeButton}
+                className="glass-gold"
+                title="Connect to peer node"
+              >
+                <span style={styles.buttonIcon}>🔗</span>
+                <span style={styles.buttonText}>Peers: {connectedPeers}</span>
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowRoomInput(!showRoomInput)}
+                style={styles.roomButton}
+                className="glass"
+              >
+                <span style={styles.buttonIcon}>🚪</span>
+                <span style={styles.buttonText}>Room: {currentRoom}</span>
+              </motion.button>
+            </>
+          )}
+          
           <WalletConnect
             onConnect={handleWalletConnect}
             connected={!!walletAddress}
@@ -120,6 +210,148 @@ export default function Home() {
 
       {/* Main content */}
       <div style={styles.mainContainer}>
+        {/* Room Input Modal */}
+        <AnimatePresence>
+          {showRoomInput && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={styles.modalOverlay}
+              onClick={() => setShowRoomInput(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                style={styles.modalContent}
+                className="glass-dark"
+              >
+                <h2 style={styles.modalTitle}>Join Chat Room</h2>
+                <p style={styles.modalSubtitle}>
+                  Enter a room ID to join a private chat. Anyone with the same ID can see messages.
+                </p>
+                <input
+                  type="text"
+                  value={roomInputValue}
+                  onChange={(e) => setRoomInputValue(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSwitchRoom()}
+                  placeholder="e.g., my-secret-room"
+                  style={styles.roomInput}
+                  className="glass"
+                  autoFocus
+                />
+                <div style={styles.modalButtons}>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowRoomInput(false)}
+                    style={styles.modalButtonCancel}
+                    className="glass"
+                  >
+                    Cancel
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleSwitchRoom}
+                    style={styles.modalButtonJoin}
+                    className="glass-gold"
+                    disabled={!roomInputValue.trim() || isInitializing}
+                  >
+                    {isInitializing ? 'Joining...' : 'Join Room'}
+                  </motion.button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Node Connect Modal */}
+        <AnimatePresence>
+          {showNodeConnect && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={styles.modalOverlay}
+              onClick={() => setShowNodeConnect(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.8, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.8, opacity: 0 }}
+                onClick={(e) => e.stopPropagation()}
+                style={styles.modalContent}
+                className="glass-dark"
+              >
+                <h2 style={styles.modalTitle}>Connect to Peer Node</h2>
+                <p style={styles.modalSubtitle}>
+                  Enter a peer's Node ID to establish direct P2P connection and sync messages.
+                </p>
+                
+                {/* Your Node ID */}
+                <div style={styles.nodeIdSection}>
+                  <div style={styles.nodeIdLabel}>Your Node ID:</div>
+                  <div style={styles.nodeIdDisplay}>
+                    <code style={styles.nodeIdCode}>{myNodeId}</code>
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={copyNodeId}
+                      style={styles.copyButton}
+                      className="glass"
+                    >
+                      📋 Copy
+                    </motion.button>
+                  </div>
+                  <div style={styles.nodeIdHint}>
+                    Share this ID with others to let them connect to you
+                  </div>
+                </div>
+
+                {/* Connect to Peer */}
+                <div style={styles.connectSection}>
+                  <div style={styles.nodeIdLabel}>Connect to Peer:</div>
+                  <input
+                    type="text"
+                    value={nodeIdInput}
+                    onChange={(e) => setNodeIdInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleConnectToNode()}
+                    placeholder="Paste peer's Node ID here"
+                    style={styles.roomInput}
+                    className="glass"
+                    autoFocus
+                  />
+                </div>
+
+                <div style={styles.modalButtons}>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => setShowNodeConnect(false)}
+                    style={styles.modalButtonCancel}
+                    className="glass"
+                  >
+                    Close
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleConnectToNode}
+                    style={styles.modalButtonJoin}
+                    className="glass-gold"
+                    disabled={!nodeIdInput.trim()}
+                  >
+                    Connect
+                  </motion.button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Sidebar - OrbitDB Status */}
         <AnimatePresence>
           {showStatus && orbitSystem && (
@@ -338,6 +570,30 @@ const styles = {
     gap: '1rem',
     flexWrap: 'wrap',
   },
+  roomButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.25rem',
+    borderRadius: '0.75rem',
+    border: 'none',
+    background: 'rgba(212, 175, 55, 0.1)',
+    color: '#D4AF37',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    fontFamily: "'Inter', sans-serif",
+  },
+  buttonIcon: {
+    fontSize: '1.2rem',
+  },
+  buttonText: {
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '200px',
+  },
   statusButton: {
     display: 'flex',
     alignItems: 'center',
@@ -517,5 +773,146 @@ const styles = {
   },
   footerDivider: {
     color: '#C0C0C0',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(0, 0, 0, 0.8)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    backdropFilter: 'blur(5px)',
+  },
+  modalContent: {
+    maxWidth: '500px',
+    width: '90%',
+    padding: '2.5rem',
+    borderRadius: '1.5rem',
+    border: '1px solid rgba(212, 175, 55, 0.2)',
+  },
+  modalTitle: {
+    fontSize: '1.75rem',
+    fontWeight: 700,
+    color: '#D4AF37',
+    marginBottom: '0.5rem',
+    fontFamily: "'Playfair Display', serif",
+  },
+  modalSubtitle: {
+    fontSize: '0.95rem',
+    color: '#C0C0C0',
+    marginBottom: '1.5rem',
+    lineHeight: 1.6,
+    fontFamily: "'Inter', sans-serif",
+  },
+  roomInput: {
+    width: '100%',
+    padding: '1rem 1.25rem',
+    fontSize: '1rem',
+    borderRadius: '0.75rem',
+    border: '1px solid rgba(212, 175, 55, 0.2)',
+    background: 'rgba(28, 28, 28, 0.5)',
+    color: '#FFF',
+    marginBottom: '1.5rem',
+    fontFamily: "'Inter', sans-serif",
+    outline: 'none',
+    transition: 'all 0.3s ease',
+  },
+  modalButtons: {
+    display: 'flex',
+    gap: '1rem',
+  },
+  modalButtonCancel: {
+    flex: 1,
+    padding: '0.875rem 1.5rem',
+    borderRadius: '0.75rem',
+    border: 'none',
+    background: 'rgba(192, 192, 192, 0.1)',
+    color: '#C0C0C0',
+    fontSize: '1rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: "'Inter', sans-serif",
+  },
+  modalButtonJoin: {
+    flex: 1,
+    padding: '0.875rem 1.5rem',
+    borderRadius: '0.75rem',
+    border: 'none',
+    background: 'linear-gradient(135deg, #D4AF37 0%, #F0E68C 100%)',
+    color: '#1C1C1C',
+    fontSize: '1rem',
+    fontWeight: 700,
+    cursor: 'pointer',
+    fontFamily: "'Inter', sans-serif",
+  },
+  nodeButton: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.25rem',
+    borderRadius: '0.75rem',
+    border: 'none',
+    background: 'linear-gradient(135deg, #D4AF37 0%, #F0E68C 100%)',
+    color: '#1C1C1C',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    fontFamily: "'Inter', sans-serif",
+  },
+  nodeIdSection: {
+    marginBottom: '1.5rem',
+    padding: '1rem',
+    borderRadius: '0.75rem',
+    background: 'rgba(212, 175, 55, 0.1)',
+    border: '1px solid rgba(212, 175, 55, 0.2)',
+  },
+  nodeIdLabel: {
+    fontSize: '0.875rem',
+    color: '#C0C0C0',
+    marginBottom: '0.5rem',
+    fontWeight: 600,
+    fontFamily: "'Inter', sans-serif",
+  },
+  nodeIdDisplay: {
+    display: 'flex',
+    gap: '0.5rem',
+    alignItems: 'center',
+  },
+  nodeIdCode: {
+    flex: 1,
+    padding: '0.75rem',
+    background: 'rgba(28, 28, 28, 0.8)',
+    borderRadius: '0.5rem',
+    color: '#D4AF37',
+    fontSize: '0.75rem',
+    fontFamily: "'Fira Code', monospace",
+    wordBreak: 'break-all',
+  },
+  copyButton: {
+    padding: '0.75rem 1rem',
+    borderRadius: '0.5rem',
+    border: 'none',
+    background: 'rgba(192, 192, 192, 0.1)',
+    color: '#C0C0C0',
+    fontSize: '0.875rem',
+    fontWeight: 600,
+    cursor: 'pointer',
+    fontFamily: "'Inter', sans-serif",
+    whiteSpace: 'nowrap',
+  },
+  nodeIdHint: {
+    fontSize: '0.75rem',
+    color: '#888',
+    marginTop: '0.5rem',
+    fontStyle: 'italic',
+    fontFamily: "'Inter', sans-serif",
+  },
+  connectSection: {
+    marginBottom: '1.5rem',
   },
 };

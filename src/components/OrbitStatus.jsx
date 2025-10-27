@@ -49,10 +49,7 @@ export default function OrbitStatus({ ipfs, db, isInitialized }) {
 
     return () => {
       clearInterval(peerInterval);
-      if (db.events) {
-        db.events.off('replicated', handleReplicated);
-        db.events.off('write', handleWrite);
-      }
+      // Cleanup is handled by component unmount
     };
   }, [ipfs, db, isInitialized]);
 
