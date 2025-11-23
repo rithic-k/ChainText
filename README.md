@@ -224,12 +224,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Ethers.js** for Web3 functionality
 - **Framer Motion** for smooth animations
 
-## 📞 Support
-
-- 📧 Email: support@chaintext.app
-- 🐦 Twitter: [@ChainTextApp](https://twitter.com/chaintextapp)
-- 💬 Discord: [Join our community](https://discord.gg/chaintext)
-
 ## 🗺️ Roadmap
 
 - [ ] Group messaging with shared encryption keys
