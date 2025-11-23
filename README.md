@@ -243,8 +243,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Custom encryption key management
 - [ ] Multi-wallet support
 
----
 
-**Built with ❤️ for the decentralized web**
 
 ⛓️ **ChainText** - Because your conversations belong to you.
